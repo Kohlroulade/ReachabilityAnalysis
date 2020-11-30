@@ -32,10 +32,8 @@
 <body>
   <!--  where the map will live  -->
   <div id="map"></div>
-  <div>
-    <input id="" type="input" /><input value="+" type="button" onclick=""/><input value="-" type="button" onclick=""/>
-    <br />
-    <input value="OK" type="button" onclick="" />
+  <div id="input">
+    <input type="button" id="okButton" value="OK" onclick="" />
   </div>
   <div id="report"></div>
 
@@ -57,35 +55,18 @@
       var ui = H.ui.UI.createDefault(map, defaultLayers, 'de-DE');
       var behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
 
-      var routingParams = {
-        'mode': 'fastest;car;',
-        'start': 'geo!48.13,11.58',
-        'range': '150,300',
-        'rangetype': 'time'
-      };
-
       // Get an instance of the routing service:
       var router = platform.getRoutingService();
-
-      /* the following for whatever reason transforms the POST to get which server isn´t able to handle
-      $.post({
-            url: 'https://xyz.api.here.com/hub/spaces/CgQGUsrk/spatial?p.qualityLevel=4',
-            dataType: 'json',
-            data: {
-                type: "Point",
-                coordinates: [52.4990273,13.3881283],
-                apiKey: myApiKey
-                accessToken: accessToken
-             }
-          });
-      */
-     
-     
-      const intersectingObjects = [];
-      // request all POIs
-      const response = await fetch('munich-places-v90_CgQGUsrk.geojson')
-        .then(x => x.json())
-        .then(featureCollection => {
+      var xyzService = platform.getXYZService({ token: accessToken });
+      var pois = xyzService.search('CgQGUsrk',
+        featureCollection => {
+          const intersectingObjects = [];
+          var routingParams = {
+            'mode': 'fastest;car;',
+            'start': 'geo!48.13,11.58',
+            'range': `${ maxTravelTime },${ maxTravelTime * 2 }`,
+            'rangetype': 'time'
+          };
           // Call the Routing API to calculate an isoline:
           router.calculateIsoline(
             routingParams,
@@ -140,11 +121,14 @@
             }
           });
 
-        });       
+        },       
+        error => { }
+      );
     }
 
+    createInputElements(0);
     initMap();
-
+    
     function getCenterPoint(response) {
       return new H.geo.Point(
         response.response.center.latitude,
@@ -185,6 +169,17 @@
       }
     }
 
+    function createInputElements(index) {
+      $("#okButton").before(`
+        <div id="input${ index }">
+          <input type="text" />
+          <input type="button" value="+" onclick="createInputElements(${ index + 1 })"/>
+          <input type="button" value="-" onclick="removeInputElements(${ index })"/>
+        </div>`);
+    }
+    function removeInputElements(index) {
+      $(`#input${ index }`).remove();
+    }
   </script>
 </body>
 
