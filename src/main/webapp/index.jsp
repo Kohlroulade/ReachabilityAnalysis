@@ -33,13 +33,13 @@
   <!--  where the map will live  -->
   <div id="map"></div>
   <div id="input">
+    <input type="range" id="slider" min="1" max="3600" value="1800" />
     <input type="button" id="okButton" value="OK" onclick="submit()" />
   </div>
   <div id="report"></div>
 
   <script>
     const initialCoords = '48.13,11.58'
-    const maxTravelTime = 1800;
     var map;
     var router;
       
@@ -138,6 +138,7 @@
     };
 
     function perform(sourceLocations) {
+      maxTravelTime = $("#slider").val();
       $.ajax({
         url: 'https://xyz.api.here.com/hub/spaces/CgQGUsrk/search?',
         type: 'GET',
