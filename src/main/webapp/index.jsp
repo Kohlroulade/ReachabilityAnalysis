@@ -95,8 +95,8 @@
       for(var x of Object.values(response.response.matrixEntry)) {
         var d = reachableDestinations[x.destinationIndex];
         
-        if(x.summary && x.summary.costFactor <= maxTravelTime)
-          yield d;
+        d.reachable = x.summary && x.summary.costFactor <= maxTravelTime;
+        yield d;
       }
     };
 
@@ -186,7 +186,7 @@
             },
             error => { alert(error.message); }
           );
-
+          
           // perform an m:n-routing
           var destinations = featureCollection.features.map(x => x.geometry.coordinates.join());
           var postData = { 
@@ -224,12 +224,19 @@
             data: postData,
             success: function (response) {
               for(const item of getReachableDestinations(response, destinations, maxTravelTime))
-                map.addObject(new H.map.Marker({ lat: item.lat, lng: item.lng }));
+              {
+                var color = item.reachable ? 'green' : 'red';
+                  var svg = 
+                    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+                      <circle cx="5" cy="5" r="5" fill="${ color }" />
+                    </svg>`;
+                  map.addObject(new H.map.Marker({ lat: item.lat, lng: item.lng }, { icon: new H.map.Icon(svg)}));
+              }
             }
           });
         }
       });
-    }
+    };
   </script>
 </body>
 
