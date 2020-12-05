@@ -82,22 +82,23 @@
         return new H.geo.Polygon(linestring);
     };
 
-    function* getReachableDestinations(response, destinations, maxTravelTime) {
+    function getReachableDestinations(response, destinations, maxTravelTime) {
       var reachableDestinations = destinations.map((x, i) => {
         var coords = x.split(',');
         return {
           index: i,
           lat: coords[1], // coords are swapped by calculateMatrix
-          lng: coords[0]
+          lng: coords[0],
+          reachable: true
         }
       });
 
       for(var x of Object.values(response.response.matrixEntry)) {
         var d = reachableDestinations[x.destinationIndex];
         
-        d.reachable = x.summary && x.summary.costFactor <= maxTravelTime;
-        yield d;
+        d.reachable = d.reachable && x.summary && x.summary.costFactor <= maxTravelTime;
       }
+      return reachableDestinations;
     };
 
     function createInputElements(index) {
@@ -190,14 +191,13 @@
           // perform an m:n-routing
           var destinations = featureCollection.features.map(x => x.geometry.coordinates.join());
           var postData = { 
-            // start0: '52.5139,13.3576',
             mode: 'fastest;car',
             summaryAttributes: 'traveltime',
             apiKey: myApiKey
           }
           for(var i = 0; i < destinations.length; i++) {
             var coords = destinations[i].split(',');
-            // swap the coords, we need LatLng, but we get LngLat from the geoJSON
+            // swap the coords, we need LatLng, but we get LngLat from data-hub
             postData[`destination${i}`] = `${coords[1]},${coords[0]}`;
           }
           for(var i = 0; i < sourceLocations.length; i++) {
