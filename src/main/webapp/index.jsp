@@ -153,45 +153,11 @@
         },
         success: featureCollection => {
           const intersectingObjects = [];
-          var routingParams = {
-            mode: 'fastest;car;',
-            start: `geo!${ initialCoords }`,
-            range: `${ maxTravelTime },${ maxTravelTime * 2 }`,
-            rangetype: 'time'
-          };
-          // Call the Routing API to calculate an isoline:
-          router.calculateIsoline(
-            routingParams,
-            result => {
-              var centerPoint = getCenterPoint(result);
-              var isolinePolygon = getIsolinePolygon(result);
-              
-              // Add the polygon and marker to the map:
-              map.addObjects([
-                //new H.map.Marker(centerPoint), 
-                new H.map.Polygon(isolinePolygon)
-              ]);
-
-              // Center and zoom the map so that the whole isoline polygon is
-              // in the viewport:
-              map.getViewModel().setLookAtData({bounds: isolinePolygon.getBoundingBox()});
-            
-              // unfortunately we were not able to use the spatial-resource from the xyz-service
-              // see https://stackoverflow.com/questions/65051468/post-request-sent-as-get
-              // so we intersect every feature with our polygon
-              var geoJSON = isolinePolygon.toGeoJSON()
-              for(var f of Object.values(featureCollection.features)) {
-                if(turf.intersect(f, geoJSON))
-                  intersectingObjects.push(f);
-              }
-            },
-            error => { alert(error.message); }
-          );
           
           // perform an m:n-routing
           var destinations = featureCollection.features.map(x => x.geometry.coordinates.join());
           var postData = { 
-            mode: 'fastest;car',
+            mode: 'fastest;car;traffic:disabled',
             summaryAttributes: 'traveltime',
             apiKey: myApiKey
           }
@@ -212,10 +178,44 @@
               },
               success: result => {
                 var coords = result.items[0].position;
-                postData[`start${ i }`] = `${ coords.lat },${ coords.lng }`;
+                var latLng = `${ coords.lat },${ coords.lng }`;
+                postData[`start${ i }`] = latLng;
+
+                var routingParams = {
+                  mode: 'fastest;car;traffic:disabled',
+                  start: `geo!${ latLng }`,
+                  range: `${ maxTravelTime },${ maxTravelTime * 2 }`,
+                  rangetype: 'time'
+                };
+                    
+                // Call the Routing API to calculate an isoline:
+                router.calculateIsoline(
+                  routingParams,
+                  isolineResponse => {
+                    var centerPoint = getCenterPoint(isolineResponse);
+                    var isolinePolygon = getIsolinePolygon(isolineResponse);
+                    
+                    // Add the polygon and marker to the map:
+                    map.addObjects([
+                      //new H.map.Marker(centerPoint), 
+                      new H.map.Polygon(isolinePolygon)
+                    ]);
+
+                    // unfortunately we were not able to use the spatial-resource from the xyz-service
+                    // see https://stackoverflow.com/questions/65051468/post-request-sent-as-get
+                    // so we intersect every feature with our polygon
+                    var geoJSON = isolinePolygon.toGeoJSON()
+                    for(var f of Object.values(featureCollection.features)) {
+                      if(turf.intersect(f, geoJSON))
+                        intersectingObjects.push(f);
+                    }
+                  },
+                  error => { alert(error.message); }
+                );
               }
-            })
+            });
           }
+
           $.ajax({
             url: 'https://matrix.route.ls.hereapi.com/routing/7.2/calculatematrix.json',
             type: 'POST',
