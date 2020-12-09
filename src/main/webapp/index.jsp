@@ -6,8 +6,14 @@
   <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js" type="text/javascript" charset="utf-8"></script>
   <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js" type="text/javascript" charset="utf-8"></script>
   <script src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js" type="text/javascript" ></script>
+
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+  <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+  
   <script src='https://unpkg.com/@turf/turf/turf.min.js'></script>
+ 
+   
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
   
   <link rel="stylesheet" type="text/css" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css" />
   <style>
@@ -104,7 +110,7 @@
     function createInputElements(index) {
       $("#okButton").before(`
         <div id="input${ index }">
-          <input type="text" onkeyup="suggestLocations(event)" />
+          <input type="text" onkeyup="suggestLocations(event)" id="locationTextbox${ index }"/>
           <input type="button" value="+" onclick="createInputElements(${ index + 1 })" />
           <input type="button" value="-" onclick="removeInputElements(${ index })" />
         </div>`);
@@ -114,7 +120,8 @@
     }
     
     function suggestLocations(event) {
-      var text = event.target.value;
+      var target = event.target;
+      var text = target.value;
       if(text.length > 5)
         $.ajax({
           url: 'https://geocode.search.hereapi.com/v1/autosuggest',
@@ -128,7 +135,8 @@
             at: initialCoords
           },
           success: result => {
-
+            var suggestions = result.items.map(x => x.title);
+            $(`#${ target.id }`).autocomplete({ source: suggestions });
           }
         });
     };
