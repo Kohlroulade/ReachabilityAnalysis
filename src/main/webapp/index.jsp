@@ -6,8 +6,14 @@
   <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js" type="text/javascript" charset="utf-8"></script>
   <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js" type="text/javascript" charset="utf-8"></script>
   <script src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js" type="text/javascript" ></script>
+
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+  <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+  
   <script src='https://unpkg.com/@turf/turf/turf.min.js'></script>
+ 
+   
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
   
   <link rel="stylesheet" type="text/css" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css" />
   <style>
@@ -104,7 +110,7 @@
     function createInputElements(index) {
       $("#okButton").before(`
         <div id="input${ index }">
-          <input type="text" onkeyup="suggestLocations(event)" />
+          <input type="text" onkeyup="suggestLocations(event)" id="locationTextbox${ index }"/>
           <input type="button" value="+" onclick="createInputElements(${ index + 1 })" />
           <input type="button" value="-" onclick="removeInputElements(${ index })" />
         </div>`);
@@ -114,7 +120,8 @@
     }
     
     function suggestLocations(event) {
-      var text = event.target.value;
+      var target = event.target;
+      var text = target.value;
       if(text.length > 5)
         $.ajax({
           url: 'https://geocode.search.hereapi.com/v1/autosuggest',
@@ -128,7 +135,8 @@
             at: initialCoords
           },
           success: result => {
-
+            var suggestions = result.items.map(x => x.title);
+            $(target).autocomplete({ source: suggestions });
           }
         });
     };
@@ -153,45 +161,11 @@
         },
         success: featureCollection => {
           const intersectingObjects = [];
-          var routingParams = {
-            mode: 'fastest;car;',
-            start: `geo!${ initialCoords }`,
-            range: `${ maxTravelTime },${ maxTravelTime * 2 }`,
-            rangetype: 'time'
-          };
-          // Call the Routing API to calculate an isoline:
-          router.calculateIsoline(
-            routingParams,
-            result => {
-              var centerPoint = getCenterPoint(result);
-              var isolinePolygon = getIsolinePolygon(result);
-              
-              // Add the polygon and marker to the map:
-              map.addObjects([
-                //new H.map.Marker(centerPoint), 
-                new H.map.Polygon(isolinePolygon)
-              ]);
-
-              // Center and zoom the map so that the whole isoline polygon is
-              // in the viewport:
-              map.getViewModel().setLookAtData({bounds: isolinePolygon.getBoundingBox()});
-            
-              // unfortunately we were not able to use the spatial-resource from the xyz-service
-              // see https://stackoverflow.com/questions/65051468/post-request-sent-as-get
-              // so we intersect every feature with our polygon
-              var geoJSON = isolinePolygon.toGeoJSON()
-              for(var f of Object.values(featureCollection.features)) {
-                if(turf.intersect(f, geoJSON))
-                  intersectingObjects.push(f);
-              }
-            },
-            error => { alert(error.message); }
-          );
           
           // perform an m:n-routing
           var destinations = featureCollection.features.map(x => x.geometry.coordinates.join());
           var postData = { 
-            mode: 'fastest;car',
+            mode: 'fastest;car;traffic:disabled',
             summaryAttributes: 'traveltime',
             apiKey: myApiKey
           }
@@ -212,10 +186,44 @@
               },
               success: result => {
                 var coords = result.items[0].position;
-                postData[`start${ i }`] = `${ coords.lat },${ coords.lng }`;
+                var latLng = `${ coords.lat },${ coords.lng }`;
+                postData[`start${ i }`] = latLng;
+
+                var routingParams = {
+                  mode: 'fastest;car;traffic:disabled',
+                  start: `geo!${ latLng }`,
+                  range: `${ maxTravelTime },${ maxTravelTime * 2 }`,
+                  rangetype: 'time'
+                };
+                    
+                // Call the Routing API to calculate an isoline:
+                router.calculateIsoline(
+                  routingParams,
+                  isolineResponse => {
+                    var centerPoint = getCenterPoint(isolineResponse);
+                    var isolinePolygon = getIsolinePolygon(isolineResponse);
+                    
+                    // Add the polygon and marker to the map:
+                    map.addObjects([
+                      //new H.map.Marker(centerPoint), 
+                      new H.map.Polygon(isolinePolygon)
+                    ]);
+
+                    // unfortunately we were not able to use the spatial-resource from the xyz-service
+                    // see https://stackoverflow.com/questions/65051468/post-request-sent-as-get
+                    // so we intersect every feature with our polygon
+                    var geoJSON = isolinePolygon.toGeoJSON()
+                    for(var f of Object.values(featureCollection.features)) {
+                      if(turf.intersect(f, geoJSON))
+                        intersectingObjects.push(f);
+                    }
+                  },
+                  error => { alert(error.message); }
+                );
               }
-            })
+            });
           }
+
           $.ajax({
             url: 'https://matrix.route.ls.hereapi.com/routing/7.2/calculatematrix.json',
             type: 'POST',
