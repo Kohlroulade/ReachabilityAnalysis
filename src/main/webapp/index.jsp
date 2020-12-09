@@ -136,7 +136,7 @@
           },
           success: result => {
             var suggestions = result.items.map(x => x.title);
-            $(`#${ target.id }`).autocomplete({ source: suggestions });
+            $(target).autocomplete({ source: suggestions });
           }
         });
     };
