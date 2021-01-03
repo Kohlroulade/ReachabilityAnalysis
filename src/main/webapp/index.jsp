@@ -110,7 +110,7 @@
     function createInputElements(index) {
       $("#okButton").before(`
         <div id="input${ index }">
-          <input type="text" onkeyup="suggestLocations(event)" id="locationTextbox${ index }"/>
+          <input type="text" onkeyup="suggestLocationsAsync(event)" id="locationTextbox${ index }"/>
           <input type="button" value="+" onclick="createInputElements(${ index + 1 })" />
           <input type="button" value="-" onclick="removeInputElements(${ index })" />
         </div>`);
@@ -119,35 +119,41 @@
       $(`#input${ index }`).remove();
     }
     
-    function suggestLocations(event) {
+    async function suggestLocationsAsync(event) {
       var target = event.target;
       var text = target.value;
-      if(text.length > 5)
+      if(text.length > 5) {
+        var locations = await getSuggestionsAsync(event, text);
+        var suggestions = locations.items.map(x => x.title);
+        $(target).autocomplete({ source: suggestions });
+      }
+    };
+
+    function getSuggestionsAsync(event, searchString) {
+      return new Promise(function(resolve, reject) {
         $.ajax({
           url: 'https://geocode.search.hereapi.com/v1/autosuggest',
           type:'GET',
           dataType: 'json',
           data: {
             apikey: myApiKey, 
-            q: text,
+            q: searchString,
             limit: 5,
             lang: 'de-DE',
             at: initialCoords
           },
-          success: result => {
-            var suggestions = result.items.map(x => x.title);
-            $(target).autocomplete({ source: suggestions });
-          }
+          success: result => resolve(result)
         });
-    };
+      });
+    };   
   
     function submit() {
       var locations = $("input[type=text]").map(function() { return $(this).val(); });
+      maxTravelTime = $("#slider").val();
       perform(locations);
     };
 
     function perform(sourceLocations) {
-      maxTravelTime = $("#slider").val();
       $.ajax({
         url: 'https://xyz.api.here.com/hub/spaces/CgQGUsrk/search?',
         type: 'GET',
@@ -159,92 +165,96 @@
           // however there´s only the qualityLevel. No idea about its meaning within the data
           'p.qualityLevel': 4 
         },
-        success: featureCollection => {
-          const intersectingObjects = [];
-          
-          // perform an m:n-routing
-          var destinations = featureCollection.features.map(x => x.geometry.coordinates.join());
-          var postData = { 
-            mode: 'fastest;car;traffic:disabled',
-            summaryAttributes: 'traveltime',
-            apiKey: myApiKey
-          }
-          for(var i = 0; i < destinations.length; i++) {
-            var coords = destinations[i].split(',');
-            // swap the coords, we need LatLng, but we get LngLat from data-hub
-            postData[`destination${i}`] = `${coords[1]},${coords[0]}`;
-          }
-          for(var i = 0; i < sourceLocations.length; i++) {
-            $.ajax({
-              url: 'https://geocode.search.hereapi.com/v1/geocode',
-              type:'GET',
-              dataType: 'json',
-              async: false,
-              data: {
-                apikey: myApiKey, 
-                q: sourceLocations[i]
-              },
-              success: result => {
-                var coords = result.items[0].position;
-                var latLng = `${ coords.lat },${ coords.lng }`;
-                postData[`start${ i }`] = latLng;
-
-                var routingParams = {
-                  mode: 'fastest;car;traffic:disabled',
-                  start: `geo!${ latLng }`,
-                  range: `${ maxTravelTime },${ maxTravelTime * 2 }`,
-                  rangetype: 'time'
-                };
-                    
-                // Call the Routing API to calculate an isoline:
-                router.calculateIsoline(
-                  routingParams,
-                  isolineResponse => {
-                    var centerPoint = getCenterPoint(isolineResponse);
-                    var isolinePolygon = getIsolinePolygon(isolineResponse);
-                    
-                    // Add the polygon and marker to the map:
-                    map.addObjects([
-                      //new H.map.Marker(centerPoint), 
-                      new H.map.Polygon(isolinePolygon)
-                    ]);
-
-                    // unfortunately we were not able to use the spatial-resource from the xyz-service
-                    // see https://stackoverflow.com/questions/65051468/post-request-sent-as-get
-                    // so we intersect every feature with our polygon
-                    var geoJSON = isolinePolygon.toGeoJSON()
-                    for(var f of Object.values(featureCollection.features)) {
-                      if(turf.intersect(f, geoJSON))
-                        intersectingObjects.push(f);
-                    }
-                  },
-                  error => { alert(error.message); }
-                );
-              }
-            });
-          }
-
-          $.ajax({
-            url: 'https://matrix.route.ls.hereapi.com/routing/7.2/calculatematrix.json',
-            type: 'POST',
-            dataType: 'jsonp',
-            jsonp: 'jsoncallback',
-            data: postData,
-            success: function (response) {
-              for(const item of getReachableDestinations(response, destinations, maxTravelTime))
-              {
-                var color = item.reachable ? 'green' : 'red';
-                  var svg = 
-                    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
-                      <circle cx="5" cy="5" r="5" fill="${ color }" />
-                    </svg>`;
-                  map.addObject(new H.map.Marker({ lat: item.lat, lng: item.lng }, { icon: new H.map.Icon(svg)}));
-              }
-            }
-          });
-        }
+        success: async featureCollection => await calculateReachabilityAsync(featureCollection.features, sourceLocations)
       });
     };
+
+    function calculateIsolineAsync(routingParams, features) {
+      return new Promise(function(resolve, reject) {
+        // Call the Routing API to calculate an isoline:
+        router.calculateIsoline(
+          routingParams,
+          isolineResponse => {
+            var centerPoint = getCenterPoint(isolineResponse);
+            var isolinePolygon = getIsolinePolygon(isolineResponse);
+            resolve(isolinePolygon);            
+          },
+          error => { reject(error.message); }
+        );
+      });
+    }
+    
+    function calculateReachabilityMatrixAsync(postData) {
+      return new Promise(function(resolve, reject) {
+        $.ajax({
+          url: 'https://matrix.route.ls.hereapi.com/routing/7.2/calculatematrix.json',
+          type: 'POST',
+          dataType: 'jsonp',
+          jsonp: 'jsoncallback',
+          data: postData,
+          success: result => resolve(result) 
+        });
+      });
+    }
+    
+    function geocodeAsync(location) {
+      return new Promise(function(resolve, reject) {
+        $.ajax({
+          url: 'https://geocode.search.hereapi.com/v1/geocode',
+          type:'GET',
+          dataType: 'json',
+          async: false,
+          data: {
+            apikey: myApiKey, 
+            q: location
+          },
+          success: result => resolve(result)
+        });
+      });
+    }
+  
+    async function calculateReachabilityAsync(features, sourceLocations) {
+      const intersectingObjects = [];
+          
+      // perform an m:n-routing
+      var destinations = features.map(x => x.geometry.coordinates.join());
+      var postData = { 
+        mode: 'fastest;car;traffic:disabled',
+        summaryAttributes: 'traveltime',
+        apiKey: myApiKey
+      }
+      for(var i = 0; i < destinations.length; i++) {
+        var coords = destinations[i].split(',');
+        // swap the coords, we need LatLng, but we get LngLat from data-hub
+        postData[`destination${i}`] = `${coords[1]},${coords[0]}`;
+      }
+      for(var i = 0; i < sourceLocations.length; i++) {
+        var location = await geocodeAsync(sourceLocations[i]);       
+        var coords = location.items[0].position;
+        var latLng = `${ coords.lat },${ coords.lng }`;
+        postData[`start${ i }`] = latLng;
+
+        var routingParams = {
+          mode: 'fastest;car;traffic:disabled',
+          start: `geo!${ latLng }`,
+          range: `${ maxTravelTime },${ maxTravelTime * 2 }`,
+          rangetype: 'time'
+        };                   
+        let isolinePolygon = await calculateIsolineAsync(routingParams, features);
+        map.addObject(new H.map.Polygon(isolinePolygon));
+      }
+
+      var matrix = await calculateReachabilityMatrixAsync(postData);
+      for(const item of getReachableDestinations(matrix, destinations, maxTravelTime))
+      {
+        var color = item.reachable ? 'green' : 'red';
+          var svg = 
+            `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+              <circle cx="5" cy="5" r="5" fill="${ color }" />
+            </svg>`;
+          map.addObject(new H.map.Marker({ lat: item.lat, lng: item.lng }, { icon: new H.map.Icon(svg)}));
+      }
+    }
   </script>
 </body>
 
