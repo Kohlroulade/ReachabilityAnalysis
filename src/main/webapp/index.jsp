@@ -153,20 +153,9 @@
       perform(locations);
     };
 
-    function perform(sourceLocations) {
-      $.ajax({
-        url: 'https://xyz.api.here.com/hub/spaces/CgQGUsrk/search?',
-        type: 'GET',
-        dataType: 'json',
-        data: { 
-          limit: 10,
-          access_token: accessToken, 
-          // would be nice if there were some properties to filter the data
-          // however there´s only the qualityLevel. No idea about its meaning within the data
-          'p.qualityLevel': 4 
-        },
-        success: async featureCollection => await calculateReachabilityAsync(featureCollection.features, sourceLocations)
-      });
+    async function perform(sourceLocations) {
+      var featureCollection = await queryFeaturesFromDataHubAsync();
+      await calculateReachabilityAsync(featureCollection.features, sourceLocations)
     };
 
     function calculateIsolineAsync(routingParams, features) {
